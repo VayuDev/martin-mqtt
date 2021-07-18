@@ -171,7 +171,7 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
                 auto durationToNextPing = (mConfig.getKeepAliveIntervalSeconds() - mClient->getSecondsSinceLastSend()) * 1000;
                 auto blockTimeout = timeout;
                 if(blockTimeout.has_value()) {
-                    blockTimeout = std::chrono::milliseconds(std::min(blockTimeout->count(), durationToNextPing));
+                    blockTimeout = std::chrono::milliseconds(std::min((size_t)blockTimeout->count(), (size_t)durationToNextPing));
                 } else {
                     blockTimeout = std::chrono::milliseconds(durationToNextPing);
                 }
