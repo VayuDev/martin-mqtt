@@ -1,0 +1,15 @@
+cmake-build-*
+.cache
+.idea
+.vscode
+vgcore*
+massif*
+callgrind*
+.cache
+compile_commands.json
+mqtt-client-cli/CMakeFiles
+mqtt-client/CMakeFiles
+mqtt-client/cmake_install.cmake
+mqtt-client/Makefile
+mqtt-client-cli/cmake_install.cmake
+mqtt-client-cli/Makefile
