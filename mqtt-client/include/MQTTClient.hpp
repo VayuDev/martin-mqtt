@@ -163,7 +163,7 @@ public:
      * the function will block until all tasks have been handled. If the optional has the value 0ms,
      * exactly one task will be handled.
      * @param useSelect If useSelect is set to BlockForRecv::Yes, then this function will use select/poll. This means
-     * that it will block about timeout milliseconds and indefinetely if timeout is empty.
+     * that it will block about timeout milliseconds, but no longer than the keep alive interval
      * @return The reason why this function returned.
      */
     MQTTClientLoopStatus loop(std::optional<std::chrono::milliseconds> timeout, BlockForRecv useSelect = BlockForRecv::No);

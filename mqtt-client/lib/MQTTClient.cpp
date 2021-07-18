@@ -157,10 +157,6 @@ void MQTTClient::unsubscribe(std::string topic) {
 MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> timeout, BlockForRecv useSelect) {
     std::lock_guard<std::recursive_mutex> guard{ mMutex };
     try {
-        if(mClient && mClient->getConnectState() == TCPConnectState::CONNECTED && useSelect == BlockForRecv::Yes) {
-            mClient->blockUntilDataAvailable(timeout);
-        }
-        // TODO optionally use select/poll syscall to wait until there is data
         if(mClient && mClient->isDataAvailable() && !mCurrentlyReceivingPacket) {
             // server is sending something we're not expecting, it's probably a PUBLISH, so we need
             // to receive it Those packets get handled automatically, so we don't need a handler
@@ -169,6 +165,18 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
         if(mClient && mClient->getSecondsSinceLastSend() >= mConfig.getKeepAliveIntervalSeconds()) {
             // we have KeepAliveInterval * 1.5 seconds to send the ping, so we don't need to hurry
             enqueueSendPingReq();
+        } else {
+            // wait until there is data
+            if(mClient && mClient->getConnectState() == TCPConnectState::CONNECTED && useSelect == BlockForRecv::Yes) {
+                auto durationToNextPing = (mConfig.getKeepAliveIntervalSeconds() - mClient->getSecondsSinceLastSend()) * 1000;
+                auto blockTimeout = timeout;
+                if(blockTimeout.has_value()) {
+                    blockTimeout = std::chrono::milliseconds(std::min(blockTimeout->count(), durationToNextPing));
+                } else {
+                    blockTimeout = std::chrono::milliseconds(durationToNextPing);
+                }
+                mClient->blockUntilDataAvailable(*blockTimeout);
+            }
         }
         if(mTaskQueue.empty()) {
             return MQTTClientLoopStatus::NOTHING_TO_DO;
