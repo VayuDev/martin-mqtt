@@ -16,7 +16,7 @@ private:
     QoS mQoS;
 
 public:
-    MQTTMessage(std::string topic, std::string payload, Retain retain = Retain::Yes, QoS qos = QoS::QoS0);
+    MQTTMessage(std::string topic, std::string payload, Retain retain = Retain::No, QoS qos = QoS::QoS0);
     const std::string& getTopic() const {
         return mTopic;
     }
