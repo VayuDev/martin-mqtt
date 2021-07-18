@@ -20,7 +20,7 @@ file(GLOB_RECURSE HEADERS
 file(GLOB_RECURSE SOURCES
         "${PROJECT_SOURCE_DIR}/lib/*.cpp")
 
-add_library(mqtt-client ${SOURCES} ${HEADERS})
+add_library(mqtt-client STATIC ${SOURCES} ${HEADERS})
 include_directories(include)
 if (UNIX)
     target_link_libraries(mqtt-client stdc++ m pthread)
