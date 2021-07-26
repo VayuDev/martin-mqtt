@@ -45,5 +45,9 @@ MQTTConfigBuilder& MQTTConfigBuilder::maxRetriesOnDisconnect(int retries) {
     mConfig.mMaxRetries = retries;
     return *this;
 }
+MQTTConfigBuilder& MQTTConfigBuilder::onConnect(std::function<void()> onConnectCallback) {
+    mConfig.mOnConnectCallback = std::move(onConnectCallback);
+    return *this;
+}
 
 }

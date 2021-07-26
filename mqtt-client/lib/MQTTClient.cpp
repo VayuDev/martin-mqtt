@@ -466,7 +466,8 @@ void MQTTClient::connectMqtt() {
                         return CallbackStatus::PROTOCOL_VIOLATION;
                     }
                 }
-                std::cout << "MQTT connection successfully established!" << std::endl;
+                //std::cout << "MQTT connection successfully established!" << std::endl;
+                mConfig.getOnConnectCallback()();
                 return CallbackStatus::OK;
             });
             return CallbackStatus::OK;

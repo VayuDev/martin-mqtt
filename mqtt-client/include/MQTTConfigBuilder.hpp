@@ -6,6 +6,8 @@
 #include "Enums.hpp"
 #include "MQTTConfig.hpp"
 #include "MQTTMessage.hpp"
+#include <functional>
+
 namespace martin {
 
 class MQTTConfigBuilder {
@@ -95,6 +97,14 @@ public:
      * @return A reference to this Object.
      */
     MQTTConfigBuilder& maxRetriesOnDisconnect(int retries);
+
+    /**
+     * Will be called whenever the client (re-)connects to the broker.
+     *
+     * @param onConnectCallback The function to call
+     * @return A reference to this Object.
+     */
+    MQTTConfigBuilder& onConnect(std::function<void()> onConnectCallback);
 
     /**
      * Returns a copy of the generated MQTTConfig.

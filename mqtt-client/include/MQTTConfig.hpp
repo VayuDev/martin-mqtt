@@ -6,6 +6,7 @@
 
 #include "Forward.hpp"
 #include "MQTTMessage.hpp"
+#include <functional>
 
 namespace martin {
 
@@ -25,6 +26,7 @@ private:
     uint16_t mKeepAliveIntervalSeconds = 20;
     int32_t mMaxRetries = -1;
     std::chrono::milliseconds mDelayBetweenRetries = std::chrono::milliseconds(500);
+    std::function<void()> mOnConnectCallback;
     friend MQTTConfigBuilder;
 
 public:
@@ -57,6 +59,9 @@ public:
     }
     [[nodiscard]] auto getDelayBetweenRetries() const {
         return mDelayBetweenRetries;
+    }
+    [[nodiscard]] const auto& getOnConnectCallback() const {
+        return mOnConnectCallback;
     }
 };
 
