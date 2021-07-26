@@ -1,4 +1,4 @@
-project(mqtt-client)
+project(martin-mqtt)
 set(CMAKE_CXX_STANDARD 17)
 
 if (UNIX)
@@ -20,12 +20,12 @@ file(GLOB_RECURSE HEADERS
 file(GLOB_RECURSE SOURCES
         "${PROJECT_SOURCE_DIR}/lib/*.cpp")
 
-add_library(mqtt-client STATIC ${SOURCES} ${HEADERS})
+add_library(martin-mqtt STATIC ${SOURCES} ${HEADERS})
 include_directories(include)
 if (UNIX)
-    target_link_libraries(mqtt-client stdc++ m pthread)
+    target_link_libraries(martin-mqtt stdc++ m pthread)
 endif (UNIX)
 
 if (WIN32)
-    target_link_libraries(mqtt-client wsock32 ws2_32)
+    target_link_libraries(martin-mqtt wsock32 ws2_32)
 endif (WIN32)

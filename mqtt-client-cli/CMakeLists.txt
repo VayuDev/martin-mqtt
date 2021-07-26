@@ -1,4 +1,4 @@
-project(mqtt-client-cli)
+project(martin-mqtt-cli)
 set(CMAKE_CXX_STANDARD 17)
 
 if (UNIX)
@@ -21,14 +21,14 @@ file(GLOB_RECURSE HEADERS
 file(GLOB_RECURSE SOURCES
         "${PROJECT_SOURCE_DIR}/src/*.cpp")
 
-add_executable(mqtt-client-cli ${SOURCES} ${HEADERS} ../thirdparty/cxxopts/cxxopts.h)
+add_executable(martin-mqtt-cli ${SOURCES} ${HEADERS} ../thirdparty/cxxopts/cxxopts.h)
 
 include_directories(../mqtt-client/include)
 include_directories(include)
 if (UNIX)
-    target_link_libraries(mqtt-client-cli mqtt-client stdc++ m)
+    target_link_libraries(martin-mqtt-cli martin-mqtt stdc++ m)
 endif (UNIX)
 
 if (WIN32)
-    target_link_libraries(mqtt-client-cli mqtt-client)
+    target_link_libraries(martin-mqtt-cli martin-mqtt)
 endif (WIN32)
