@@ -467,7 +467,8 @@ void MQTTClient::connectMqtt() {
                     }
                 }
                 //std::cout << "MQTT connection successfully established!" << std::endl;
-                mConfig.getOnConnectCallback()();
+                if(mConfig.getOnConnectCallback())
+                    mConfig.getOnConnectCallback()();
                 return CallbackStatus::OK;
             });
             return CallbackStatus::OK;
