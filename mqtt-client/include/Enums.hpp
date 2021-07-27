@@ -75,4 +75,10 @@ enum class TCPConnectState
     CONNECTED
 };
 
+enum class TcpBlockUntilDataAvailableReturnReason
+{
+    TIMEOUT,
+    DATA_AVAILABLE
+};
+
 }

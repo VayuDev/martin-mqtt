@@ -39,7 +39,7 @@ public:
 
     bool isDataAvailable() override;
 
-    void blockUntilDataAvailable(std::optional<std::chrono::milliseconds> timeout) override;
+    TcpBlockUntilDataAvailableReturnReason blockUntilDataAvailable(std::optional<std::chrono::milliseconds> timeout) override;
 };
 
 }

@@ -37,13 +37,7 @@ public:
     virtual TCPConnectState getConnectState() = 0;
 
     virtual bool isDataAvailable() = 0;
-    virtual void blockUntilDataAvailable(std::optional<std::chrono::milliseconds> timeout) {
-        auto start = std::chrono::steady_clock::now();
-        while(getConnectState() == TCPConnectState::CONNECTED && !isDataAvailable()
-              && (!timeout || (std::chrono::steady_clock::now() - start) < *timeout)) {
-            std::this_thread::yield();
-        }
-    }
+    virtual TcpBlockUntilDataAvailableReturnReason blockUntilDataAvailable(std::optional<std::chrono::milliseconds> timeout) = 0;
 
     [[nodiscard]] time_t getSecondsSinceLastSend() const {
         return time(nullptr) - mLastPacketSendTime;

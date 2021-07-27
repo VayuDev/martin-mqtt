@@ -13,6 +13,8 @@
 #include <sys/ioctl.h>
 #include <cerrno>
 #include <cassert>
+#include <poll.h>
+#include <iostream>
 
 namespace martin {
 static void throwError(const std::string& function) {
@@ -122,18 +124,23 @@ bool TcpUnix::isDataAvailable() {
     return numBytes > 0;
 }
 
-void TcpUnix::blockUntilDataAvailable(std::optional<std::chrono::milliseconds> timeout) {
-    fd_set fdSet;
-    FD_ZERO(&fdSet);
-    FD_SET(mSocket, &fdSet);
-    if(timeout) {
-        timeval selectTimeout{};
-        selectTimeout.tv_sec = timeout->count() / 1000;
-        selectTimeout.tv_usec = (timeout->count() % 1000) * 1000;
-        select(mSocket + 1, &fdSet, nullptr, nullptr, &selectTimeout);
-    } else {
-        select(mSocket + 1, &fdSet, nullptr, nullptr, nullptr);
+TcpBlockUntilDataAvailableReturnReason TcpUnix::blockUntilDataAvailable(std::optional<std::chrono::milliseconds> timeout) {
+    int pollTimeout = timeout.has_value() ? (int)timeout.value().count() : -1;
+    pollfd fd;
+    fd.fd = mSocket;
+    fd.events = POLLIN;
+    fd.revents = 0;
+    auto ret = poll(&fd, 1, pollTimeout);
+    if(ret == 0) {
+        return TcpBlockUntilDataAvailableReturnReason::TIMEOUT;
     }
+    if(ret < 0) {
+        throwError("poll()");
+    }
+    if(fd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+        throw std::runtime_error{"poll() detected socket error"};
+    }
+    return TcpBlockUntilDataAvailableReturnReason::DATA_AVAILABLE;
 }
 
 }
