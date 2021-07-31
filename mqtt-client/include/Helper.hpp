@@ -54,4 +54,8 @@ std::vector<std::string> splitStringBySlash(const std::string& src);
 
 bool doesTopicMatchPattern(const std::string& topic, const std::string& pattern);
 
+static inline bool isTopicAdvanced(const std::string& topic) {
+    return topic.find('#') != std::string::npos || topic.find('+') != std::string::npos;
+}
+
 }

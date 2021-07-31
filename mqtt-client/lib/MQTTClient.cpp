@@ -73,7 +73,11 @@ void MQTTClient::subscribe(std::string topic, QoS qos, MQTTPublishCallback callb
             buffer.emplace_back(static_cast<uint8_t>(qos));
             insertMessageLengthToHeader(buffer);
 
-            mCallbacks.emplace_back(std::make_pair(topic, std::move(callback)));
+            if(isTopicAdvanced(topic)) {
+                mAdvancedCallbacks.emplace_back(std::make_pair(topic, std::move(callback)));
+            } else {
+                mSimpleCallbacks.emplace(topic, std::move(callback));
+            }
 
             // send packet
             enqueueSendFront(OnDisconnect::DELETE_ME, buffer, [this, id, topic]() -> CallbackStatus {
@@ -114,9 +118,10 @@ void MQTTClient::unsubscribe(std::string topic) {
         throw std::runtime_error{ "Already disconnected!" };
 
     // remove callback handlers
-    for(auto it = mCallbacks.begin(); it != mCallbacks.end();) {
+    mSimpleCallbacks.erase(topic);
+    for(auto it = mAdvancedCallbacks.begin(); it != mAdvancedCallbacks.end();) {
         if(it->first == topic) {
-            it = mCallbacks.erase(it);
+            it = mAdvancedCallbacks.erase(it);
         } else {
             it++;
         }
@@ -347,14 +352,14 @@ void MQTTClient::handlePublishReceived(MessageType messageType, const std::vecto
         payload.push_back(buffer.at(i));
     }
     MQTTMessage message{ topicName, std::move(payload), retain, qos };
-    for(auto& callback : mCallbacks) {
+    for(auto& callback : mAdvancedCallbacks) {
         if(doesTopicMatchPattern(topicName, callback.first)) {
-            if(callback.second.index() == 0) {
-                std::get<std::function<void(const MQTTMessage&)>>(callback.second)(message);
-            } else {
-                std::get<std::shared_ptr<AbstractMQTTMessageHandler>>(callback.second)->handleMessage(message);
-            }
+            callback.second(message);
         }
+    }
+    auto[start, end] = mSimpleCallbacks.equal_range(topicName);
+    for(auto it = start; it != end; ++it) {
+        it->second(message);
     }
 }
 
@@ -400,9 +405,16 @@ void MQTTClient::connectMqtt() {
     }
 
     // the resubscribe (tasks are put at the end)
-    auto callbacks = std::move(mCallbacks);
-    mCallbacks.clear();
-    for(const auto& elem : callbacks) {
+    auto advancedCallbacks = std::move(mAdvancedCallbacks);
+    mAdvancedCallbacks = {};
+    for(auto& elem : advancedCallbacks) {
+        // FIXME(Jan): Add QoS into mCallbacks
+        subscribe(std::move(elem.first), QoS::QoS0, std::move(elem.second));
+    }
+
+    auto simpleCallback = std::move(mSimpleCallbacks);
+    mSimpleCallbacks = {};
+    for(auto& elem : simpleCallback) {
         // FIXME(Jan): Add QoS into mCallbacks
         subscribe(std::move(elem.first), QoS::QoS0, std::move(elem.second));
     }

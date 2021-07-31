@@ -23,14 +23,15 @@
 
 namespace martin {
 
-using MQTTPublishCallback = std::variant<std::function<void(const MQTTMessage&)>, std::shared_ptr<AbstractMQTTMessageHandler>>;
+using MQTTPublishCallback = std::function<void(const MQTTMessage&)>;
 
 class MQTTClient {
 private:
     std::optional<TcpClient> mClient;
     const MQTTConfig mConfig;
     std::list<std::pair<OnDisconnect, std::function<CallbackStatus()>>> mTaskQueue;
-    std::vector<std::pair<std::string, MQTTPublishCallback>> mCallbacks;
+    std::unordered_multimap<std::string, MQTTPublishCallback> mSimpleCallbacks;
+    std::vector<std::pair<std::string, MQTTPublishCallback>> mAdvancedCallbacks;
     std::recursive_mutex mMutex;
     // This is set while receiving a packet to prevent enqueueing an empty receive-packet once there is data
     // on the server (which is otherwise useful for receiving publish).
