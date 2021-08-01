@@ -43,6 +43,8 @@ private:
     int mTries = 0;
     std::chrono::time_point<std::chrono::steady_clock, std::chrono::nanoseconds> mLastReconnect;
 
+    bool mPingIsScheduled = false;
+
     void connectMqtt();
     /**
      * This function simply disconnects from the remote server by resetting mClient.

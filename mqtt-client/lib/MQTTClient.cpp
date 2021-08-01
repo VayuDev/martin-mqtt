@@ -187,7 +187,7 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
                         blockTimeout = durationToNextPing;
                     }
                     auto blockReturnReason = mClient->blockUntilDataAvailable(blockTimeout);
-                    if(blockReturnReason == TcpBlockUntilDataAvailableReturnReason::TIMEOUT && usedDurationToNextPingAsTimeout) {
+                    if(blockReturnReason == TcpBlockUntilDataAvailableReturnReason::TIMEOUT && usedDurationToNextPingAsTimeout && !mPingIsScheduled) {
                         enqueueSendPingReq();
                     } else if(blockReturnReason == TcpBlockUntilDataAvailableReturnReason::DATA_AVAILABLE) {
                         // Either we received a disconnect or some actual data, so let's act accordingly
@@ -206,7 +206,7 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
                     enqueueRecvPacketFront(OnDisconnect::DELETE_ME, {});
                     mCurrentlyReceivingPacket = true;
                 }
-                if(mClient->getSecondsSinceLastSend() >= mConfig.getKeepAliveIntervalSeconds()) {
+                if(mClient->getSecondsSinceLastSend() >= mConfig.getKeepAliveIntervalSeconds() && !mPingIsScheduled) {
                     // we have KeepAliveInterval * 1.5 seconds to send the ping, so we don't need to hurry
                     enqueueSendPingReq();
                 }
@@ -372,6 +372,7 @@ void MQTTClient::handlePublishReceived(MessageType messageType, const std::vecto
 
 void MQTTClient::enqueueSendPingReq() {
     std::lock_guard<std::recursive_mutex> guard{ mMutex };
+    mPingIsScheduled = true;
     mTaskQueue.emplace_back(std::make_pair(OnDisconnect::DELETE_ME, [this] {
         // create the packet
         std::vector<uint8_t> buffer(2);
@@ -381,6 +382,7 @@ void MQTTClient::enqueueSendPingReq() {
         enqueueSendFront(OnDisconnect::DELETE_ME, buffer, [this]() {
             // sent PINGREQ, now enqueue receive PINGREQ
             std::cout << "Sent ping\n";
+            mPingIsScheduled = false;
             enqueueRecvPacketFront(OnDisconnect::DELETE_ME, [this](MessageType messageType, const std::vector<uint8_t>& buffer) {
                 // received PINGRESP
                 std::cout << "Received ping\n";
