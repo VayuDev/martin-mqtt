@@ -87,7 +87,9 @@ TcpUnix::TcpUnix(const std::string& hostname, uint16_t port) {
     //}
 
     // Try to increase buffer size, increases performance; we don't really care if it doesn't work.
+#ifdef F_SETPIPE_SZ
     fcntl(mSocket, F_SETPIPE_SZ, 1024 * 64 * 4);
+#endif
 
     destructor.disarm();
 }

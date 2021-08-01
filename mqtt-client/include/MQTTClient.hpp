@@ -20,6 +20,7 @@
 #include <list>
 #include <variant>
 #include <memory>
+#include <unordered_map>
 
 namespace martin {
 
