@@ -31,9 +31,7 @@ int main(int argc, char** argv) {
 
         auto result = options.parse(argc, argv);
         martin::MQTTConfigBuilder builder;
-        builder.onConnect([] {
-            std::cout << "Connected!\n";
-        });
+        builder.onConnect([] { std::cout << "Connected!\n"; });
 
         if(!result.count("H") && !result.count("P") && !result.count("W") && !result.count("h") && !result.count("r") && !result.count("T")
            && !result.count("t") && !result.count("s") && !result.count("p")) {
