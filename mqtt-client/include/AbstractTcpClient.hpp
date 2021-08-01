@@ -21,7 +21,9 @@ protected:
     time_t mLastPacketSendTime = 0;
 
 public:
-    AbstractTcpClient() = default;
+    AbstractTcpClient() {
+        mLastPacketSendTime = time(nullptr);
+    }
     virtual ~AbstractTcpClient() = default;
     // As all implementations manage a native socket handle internally, it doesn't make sense to
     // copy this class

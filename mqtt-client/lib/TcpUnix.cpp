@@ -19,6 +19,7 @@
 namespace martin {
 static void throwError(const std::string& function) {
     char errorBuffer[512] = { 0 };
+    auto e = errno;
     strerror_r(static_cast<int>(errno), errorBuffer, 512);
     throw std::runtime_error(function + ": " + errorBuffer);
 }

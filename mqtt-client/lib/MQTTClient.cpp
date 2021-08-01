@@ -193,6 +193,7 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
                         // Either we received a disconnect or some actual data, so let's act accordingly
                         if(mClient->isDataAvailable() && !mCurrentlyReceivingPacket) {
                             enqueueRecvPacketFront(OnDisconnect::DELETE_ME, {});
+                            mCurrentlyReceivingPacket = true;
                         } else {
                             throw std::runtime_error{ "Disconnected!" };
                         }
@@ -203,6 +204,7 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
                     // server is sending something we're not expecting, it's probably a PUBLISH, so we need
                     // to receive it Those packets get handled automatically, so we don't need a handler
                     enqueueRecvPacketFront(OnDisconnect::DELETE_ME, {});
+                    mCurrentlyReceivingPacket = true;
                 }
                 if(mClient->getSecondsSinceLastSend() >= mConfig.getKeepAliveIntervalSeconds()) {
                     // we have KeepAliveInterval * 1.5 seconds to send the ping, so we don't need to hurry
@@ -278,13 +280,13 @@ MQTTClient& MQTTClient::operator<<(MQTTMessage msg) {
 }
 
 void MQTTClient::enqueueRecvPacketFront(OnDisconnect shouldKeep, std::function<CallbackStatus(MessageType, const std::vector<uint8_t>&)> onDone) {
+    mCurrentlyReceivingPacket = true;
     mTaskQueue.emplace_front(std::make_pair(shouldKeep, [this, shouldKeep = shouldKeep, onDone = std::move(onDone)]() mutable -> CallbackStatus {
         // receive packet type
         uint8_t firstByte;
         if(mClient->recv(&firstByte, 1) <= 0) {
             return CallbackStatus::REPEAT_ME;
         }
-        mCurrentlyReceivingPacket = true;
         // These variables get copied into the lambda and store the receive-state in there. This
         // works because the lambda has the mutable-keyword, allowing it to mutate it's captured
         // state.
@@ -311,8 +313,8 @@ void MQTTClient::enqueueRecvPacketFront(OnDisconnect shouldKeep, std::function<C
                 mTaskQueue.emplace_front(std::make_pair(
                     shouldKeep,
                     [this, firstByte, shouldKeep = shouldKeep, onDone = std::move(onDone), offset, packetLength, buffer]() mutable -> CallbackStatus {
-                        auto bytesReceived = mClient->recv(buffer.data() + offset, packetLength);
-                        if(bytesReceived != packetLength) {
+                        if(packetLength > 0) {
+                            auto bytesReceived = mClient->recv(buffer.data() + offset, packetLength);
                             offset += bytesReceived;
                             packetLength -= bytesReceived;
                             return CallbackStatus::REPEAT_ME;
@@ -330,9 +332,9 @@ void MQTTClient::enqueueRecvPacketFront(OnDisconnect shouldKeep, std::function<C
                         }
                         if(onDone) {
                             mTaskQueue.emplace_front(
-                                std::make_pair(shouldKeep, [messageType, buffer = std::move(buffer), onDone = std::move(onDone)]() -> CallbackStatus {
-                                    return onDone(messageType, buffer);
-                                }));
+                                    std::make_pair(shouldKeep, [messageType, buffer = std::move(buffer), onDone = std::move(onDone)]() -> CallbackStatus {
+                                        return onDone(messageType, buffer);
+                                    }));
                         }
                         return CallbackStatus::OK;
                     }));
@@ -378,8 +380,10 @@ void MQTTClient::enqueueSendPingReq() {
         // send PINGREQ
         enqueueSendFront(OnDisconnect::DELETE_ME, buffer, [this]() {
             // sent PINGREQ, now enqueue receive PINGREQ
+            std::cout << "Sent ping\n";
             enqueueRecvPacketFront(OnDisconnect::DELETE_ME, [this](MessageType messageType, const std::vector<uint8_t>& buffer) {
                 // received PINGRESP
+                std::cout << "Received ping\n";
                 if(messageType != MessageType::PINGRESP) {
                     protocolViolation();
                     return CallbackStatus::PROTOCOL_VIOLATION;
