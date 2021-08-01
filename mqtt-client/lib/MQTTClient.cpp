@@ -162,19 +162,24 @@ void MQTTClient::unsubscribe(std::string topic) {
 MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> timeout, BlockForRecv useSelect) {
     std::lock_guard<std::recursive_mutex> guard{ mMutex };
 
+    auto start = std::chrono::steady_clock::now();
     auto blockUntilThereIsSomethingToDo = [&] {
-        if(useSelect == BlockForRecv::Yes && mTaskQueue.empty()) {
+        auto timeAlreadyPassed = std::chrono::steady_clock::now() - start;
+        if(timeout.has_value() && timeout.value() <= timeAlreadyPassed) {
+            return;
+        }
+        if(useSelect == BlockForRecv::Yes && mTaskQueue.empty() && mClient->getConnectState() == TCPConnectState::CONNECTED) {
             // In this mode, loop tries to block for at least timeout milliseconds. Very efficient
             auto durationToNextPing = std::chrono::milliseconds((mConfig.getKeepAliveIntervalSeconds() - mClient->getSecondsSinceLastSend()) * 1000);
             bool usedDurationToNextPingAsTimeout = false;
             std::chrono::milliseconds blockTimeout;
             // ensure that we never block longer than durationToNextPing
             if(timeout.has_value()) {
-                if(timeout.value() > durationToNextPing) {
+                if(timeout.value() - timeAlreadyPassed > durationToNextPing) {
                     blockTimeout = durationToNextPing;
                     usedDurationToNextPingAsTimeout = true;
                 } else {
-                    blockTimeout = timeout.value();
+                    blockTimeout = std::chrono::duration_cast<std::chrono::milliseconds>(timeout.value() - timeAlreadyPassed);
                 }
             } else {
                 usedDurationToNextPingAsTimeout = true;
@@ -185,10 +190,10 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
                 enqueueSendPingReq();
             } else if(blockReturnReason == TcpBlockUntilDataAvailableReturnReason::DATA_AVAILABLE) {
                 // Either we received a disconnect or some actual data, so let's act accordingly
-                if(mClient->isDataAvailable()) {
+                if(mClient->isDataAvailable() && !mCurrentlyReceivingPacket) {
                     enqueueRecvPacketFront(OnDisconnect::DELETE_ME, {});
                 } else {
-                    throw std::runtime_error{"Disconnected!"};
+                    throw std::runtime_error{ "Disconnected!" };
                 }
             }
         }
@@ -196,7 +201,7 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
 
     try {
         // idle operations; used for sending pings, enqueuing receives and waiting if there's nothing to do
-        if(mClient && mClient->getConnectState() == TCPConnectState::CONNECTED) {
+        /*if(mClient && mClient->getConnectState() == TCPConnectState::CONNECTED) {
             // In this mode, we try to return as quickly as possible and aren't allowed to block
             if(mClient->isDataAvailable() && !mCurrentlyReceivingPacket) {
                 // server is sending something we're not expecting, it's probably a PUBLISH, so we need
@@ -207,11 +212,10 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
                 // we have KeepAliveInterval * 1.5 seconds to send the ping, so we don't need to hurry
                 enqueueSendPingReq();
             }
-        }
+        }*/
 
         blockUntilThereIsSomethingToDo();
 
-        auto start = std::chrono::steady_clock::now();
         while(!mTaskQueue.empty()) {
             // do a single task
             auto currentTask = mTaskQueue.begin();
@@ -357,7 +361,7 @@ void MQTTClient::handlePublishReceived(MessageType messageType, const std::vecto
             callback.second(message);
         }
     }
-    auto[start, end] = mSimpleCallbacks.equal_range(topicName);
+    auto [start, end] = mSimpleCallbacks.equal_range(topicName);
     for(auto it = start; it != end; ++it) {
         it->second(message);
     }
@@ -504,7 +508,7 @@ void MQTTClient::connectMqtt() {
                         return CallbackStatus::PROTOCOL_VIOLATION;
                     }
                 }
-                //std::cout << "MQTT connection successfully established!" << std::endl;
+                // std::cout << "MQTT connection successfully established!" << std::endl;
 
                 mTries = 0;
                 if(mConfig.getOnConnectCallback())
