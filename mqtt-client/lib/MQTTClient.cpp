@@ -170,35 +170,36 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
         }
         if(mClient && mClient->getConnectState() == TCPConnectState::CONNECTED) {
             if(useSelect == BlockForRecv::Yes && mTaskQueue.empty()) {
-                    // In this mode, loop tries to block for at least timeout milliseconds. Very efficient
-                    auto durationToNextPing = std::chrono::milliseconds((mConfig.getKeepAliveIntervalSeconds() - mClient->getSecondsSinceLastSend()) * 1000);
-                    bool usedDurationToNextPingAsTimeout = false;
-                    std::chrono::milliseconds blockTimeout;
-                    // ensure that we never block longer than durationToNextPing
-                    if(timeout.has_value()) {
-                        if(timeout.value() - timeAlreadyPassed > durationToNextPing) {
-                            blockTimeout = durationToNextPing;
-                            usedDurationToNextPingAsTimeout = true;
-                        } else {
-                            blockTimeout = std::chrono::duration_cast<std::chrono::milliseconds>(timeout.value() - timeAlreadyPassed);
-                        }
+                // In this mode, loop tries to block for at least timeout milliseconds. Very efficient
+                auto durationToNextPing = std::chrono::milliseconds((mConfig.getKeepAliveIntervalSeconds() - mClient->getSecondsSinceLastSend()) * 1000);
+                std::chrono::milliseconds blockTimeout;
+                // ensure that we never block longer than durationToNextPing
+                if(timeout.has_value()) {
+                    blockTimeout = std::min(durationToNextPing, std::chrono::duration_cast<std::chrono::milliseconds>(timeout.value() - timeAlreadyPassed));
+                } else {
+                    blockTimeout = durationToNextPing;
+                }
+                auto blockReturnReason = mClient->blockUntilDataAvailable(blockTimeout);
+                if(blockReturnReason == TcpBlockUntilDataAvailableReturnReason::DATA_AVAILABLE) {
+                    // Either we received a disconnect or some actual data, so let's act accordingly
+                    if(mClient->isDataAvailable() && !mCurrentlyReceivingPacket) {
+                        enqueueRecvPacketFront(OnDisconnect::DELETE_ME, {});
+                        mCurrentlyReceivingPacket = true;
                     } else {
-                        usedDurationToNextPingAsTimeout = true;
-                        blockTimeout = durationToNextPing;
+                        throw std::runtime_error{ "Disconnected!" };
                     }
-                    auto blockReturnReason = mClient->blockUntilDataAvailable(blockTimeout);
-                    if(blockReturnReason == TcpBlockUntilDataAvailableReturnReason::TIMEOUT && usedDurationToNextPingAsTimeout && !mPingIsScheduled) {
-                        enqueueSendPingReq();
-                    } else if(blockReturnReason == TcpBlockUntilDataAvailableReturnReason::DATA_AVAILABLE) {
-                        // Either we received a disconnect or some actual data, so let's act accordingly
-                        if(mClient->isDataAvailable() && !mCurrentlyReceivingPacket) {
-                            enqueueRecvPacketFront(OnDisconnect::DELETE_ME, {});
-                            mCurrentlyReceivingPacket = true;
-                        } else {
-                            throw std::runtime_error{ "Disconnected!" };
-                        }
-                    }
-            } else {
+                }
+            }
+        }
+    };
+
+    try {
+
+
+        blockUntilThereIsSomethingToDo();
+
+        while(!mTaskQueue.empty()) {
+            if(mClient) {
                 // idle operations; used for sending pings, enqueuing receives and waiting if there's nothing to do
                 if(mClient->isDataAvailable() && !mCurrentlyReceivingPacket) {
                     // server is sending something we're not expecting, it's probably a PUBLISH, so we need
@@ -211,15 +212,7 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
                     enqueueSendPingReq();
                 }
             }
-        }
-    };
 
-    try {
-
-
-        blockUntilThereIsSomethingToDo();
-
-        while(!mTaskQueue.empty()) {
             // do a single task
             auto currentTask = mTaskQueue.begin();
             auto callbackStatus = currentTask->second();
