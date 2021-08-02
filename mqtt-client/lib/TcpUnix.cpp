@@ -117,6 +117,7 @@ ssize_t TcpUnix::send(const void* buffer, ssize_t len) {
     auto result = ::send(mSocket, buffer, len, MSG_NOSIGNAL);
     if(result < 0) {
         if(errno == EWOULDBLOCK || errno == EAGAIN) {
+            mLastPacketSendTime = time(nullptr);
             return 0;
         }
         throwError("send()");
