@@ -341,7 +341,7 @@ void MQTTClient::enqueueRecvPacketFront(OnDisconnect shouldKeep, std::function<C
 void MQTTClient::handlePublishReceived(MessageType messageType, const std::vector<uint8_t>& buffer) {
     assert(messageType == MessageType::PUBLISH);
     auto qos = static_cast<QoS>((buffer.at(0) & 0b110) >> 1);
-    auto retain = static_cast<Retain>(buffer.at(0) == 1);
+    auto retain = static_cast<Retain>(buffer.at(0) & 1);
     assert(qos == QoS::QoS0);
     size_t offset = 1;
     auto topicName = extractStringFromBuffer(buffer, offset);
