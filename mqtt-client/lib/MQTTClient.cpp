@@ -197,7 +197,15 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
 
 
         blockUntilThereIsSomethingToDo();
-
+        if(mClient) {
+            // idle operations; used for sending pings, enqueuing receives and waiting if there's nothing to do
+            if(mClient->isDataAvailable() && !mCurrentlyReceivingPacket) {
+                // server is sending something we're not expecting, it's probably a PUBLISH, so we need
+                // to receive it Those packets get handled automatically, so we don't need a handler
+                enqueueRecvPacketFront(OnDisconnect::DELETE_ME, {});
+                mCurrentlyReceivingPacket = true;
+            }
+        }
         while(!mTaskQueue.empty()) {
             if(mClient) {
                 // idle operations; used for sending pings, enqueuing receives and waiting if there's nothing to do
@@ -207,6 +215,8 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
                     enqueueRecvPacketFront(OnDisconnect::DELETE_ME, {});
                     mCurrentlyReceivingPacket = true;
                 }
+            }
+            if(mClient) {
                 if(mClient->getSecondsSinceLastSend() >= mConfig.getKeepAliveIntervalSeconds() && !mPingIsScheduled) {
                     // we have KeepAliveInterval * 1.5 seconds to send the ping, so we don't need to hurry
                     enqueueSendPingReq();
