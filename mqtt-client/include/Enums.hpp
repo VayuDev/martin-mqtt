@@ -6,8 +6,8 @@ namespace martin {
 
 enum class Retain
 {
-    Yes,
-    No
+    No,
+    Yes
 };
 
 enum class QoS : uint8_t

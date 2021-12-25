@@ -17,13 +17,17 @@ void MQTTClient::enqueueSendFront(OnDisconnect shouldKeep, std::vector<uint8_t> 
     std::lock_guard<std::recursive_mutex> guard{ mMutex };
     mTaskQueue.emplace_front(std::make_pair(shouldKeep, [this, shouldKeep, buffer = std::move(buffer), onDone = std::move(onDone)]() mutable {
         auto sentBytes = mClient->send(buffer.data(), buffer.size());
-        if(sentBytes != static_cast<long>(buffer.size())) {
-            std::vector<uint8_t> newBuffer(buffer.begin() + sentBytes, buffer.end());
+        std::vector<uint8_t> newBuffer(buffer.begin() + sentBytes, buffer.end());
+        if(!newBuffer.empty()) {
             enqueueSendFront(OnDisconnect::DELETE_ME, std::move(newBuffer), std::move(onDone));
             return CallbackStatus::OK;
         }
-        mTaskQueue.emplace_front(std::make_pair(shouldKeep, std::move(onDone)));
-        return CallbackStatus::OK;
+        auto onDoneRet = onDone();
+        if(onDoneRet == CallbackStatus::REPEAT_ME) {
+            mTaskQueue.emplace_front(std::make_pair(shouldKeep, std::move(onDone)));
+            return CallbackStatus::OK;
+        }
+        return onDoneRet;
     }));
 }
 
@@ -168,27 +172,38 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
         if(timeout.has_value() && timeout.value() <= timeAlreadyPassed) {
             return;
         }
-        if(mClient && mClient->getConnectState() == TCPConnectState::CONNECTED) {
-            if(useSelect == BlockForRecv::Yes && mTaskQueue.empty()) {
-                // In this mode, loop tries to block for at least timeout milliseconds. Very efficient
-                auto durationToNextPing = std::chrono::milliseconds((mConfig.getKeepAliveIntervalSeconds() - mClient->getSecondsSinceLastSend()) * 1000);
-                std::chrono::milliseconds blockTimeout;
-                // ensure that we never block longer than durationToNextPing
-                if(timeout.has_value()) {
-                    blockTimeout = std::min(durationToNextPing, std::chrono::duration_cast<std::chrono::milliseconds>(timeout.value() - timeAlreadyPassed));
+        if(mClient && useSelect == BlockForRecv::Yes && mTaskQueue.empty() && mClient->getConnectState() == TCPConnectState::CONNECTED) {
+            // In this mode, loop tries to block for at least timeout milliseconds. Very efficient
+            auto durationToNextPing = std::chrono::milliseconds((mConfig.getKeepAliveIntervalSeconds() - mClient->getSecondsSinceLastSend()) * 1000);
+            std::chrono::milliseconds blockTimeout;
+            // ensure that we never block longer than durationToNextPing
+            if(timeout.has_value()) {
+                blockTimeout = std::min(durationToNextPing, std::chrono::duration_cast<std::chrono::milliseconds>(timeout.value() - timeAlreadyPassed));
+            } else {
+                blockTimeout = durationToNextPing;
+            }
+            auto blockReturnReason = mClient->blockUntilDataAvailable(blockTimeout);
+            if(blockReturnReason == TcpBlockUntilDataAvailableReturnReason::DATA_AVAILABLE) {
+                // Either we received a disconnect or some actual data, so let's act accordingly
+                if(mClient->isDataAvailable() && !mCurrentlyReceivingPacket) {
+                    enqueueRecvPacketFront(OnDisconnect::DELETE_ME, {});
                 } else {
-                    blockTimeout = durationToNextPing;
+                    throw std::runtime_error{ "Disconnected!" };
                 }
-                auto blockReturnReason = mClient->blockUntilDataAvailable(blockTimeout);
-                if(blockReturnReason == TcpBlockUntilDataAvailableReturnReason::DATA_AVAILABLE) {
-                    // Either we received a disconnect or some actual data, so let's act accordingly
-                    if(mClient->isDataAvailable() && !mCurrentlyReceivingPacket) {
-                        enqueueRecvPacketFront(OnDisconnect::DELETE_ME, {});
-                        mCurrentlyReceivingPacket = true;
-                    } else {
-                        throw std::runtime_error{ "Disconnected!" };
-                    }
-                }
+            }
+        }
+
+
+        if(mClient) {
+            // idle operations; used for sending pings, enqueuing receives and waiting if there's nothing to do
+            if(mClient->isDataAvailable() && !mCurrentlyReceivingPacket) {
+                // server is sending something we're not expecting, it's probably a PUBLISH, so we need
+                // to receive it Those packets get handled automatically, so we don't need a handler
+                enqueueRecvPacketFront(OnDisconnect::DELETE_ME, {});
+            }
+            if(mClient->getSecondsSinceLastSend() >= mConfig.getKeepAliveIntervalSeconds() && !mPingIsScheduled) {
+                // we have KeepAliveInterval * 1.5 seconds to send the ping, so we don't need to hurry
+                enqueueSendPingReq();
             }
         }
     };
@@ -222,7 +237,6 @@ MQTTClientLoopStatus MQTTClient::loop(std::optional<std::chrono::milliseconds> t
                     enqueueSendPingReq();
                 }
             }
-
             // do a single task
             auto currentTask = mTaskQueue.begin();
             auto callbackStatus = currentTask->second();
@@ -350,7 +364,7 @@ void MQTTClient::enqueueRecvPacketFront(OnDisconnect shouldKeep, std::function<C
 void MQTTClient::handlePublishReceived(MessageType messageType, const std::vector<uint8_t>& buffer) {
     assert(messageType == MessageType::PUBLISH);
     auto qos = static_cast<QoS>((buffer.at(0) & 0b110) >> 1);
-    auto retain = static_cast<Retain>(buffer.at(0) == 1);
+    auto retain = static_cast<Retain>(buffer.at(0) & 1);
     assert(qos == QoS::QoS0);
     size_t offset = 1;
     auto topicName = extractStringFromBuffer(buffer, offset);
@@ -376,6 +390,7 @@ void MQTTClient::handlePublishReceived(MessageType messageType, const std::vecto
 void MQTTClient::enqueueSendPingReq() {
     std::lock_guard<std::recursive_mutex> guard{ mMutex };
     mPingIsScheduled = true;
+    std::cout << "\nEnqueued ping" << std::endl;
     mTaskQueue.emplace_back(std::make_pair(OnDisconnect::DELETE_ME, [this] {
         // create the packet
         std::vector<uint8_t> buffer(2);
@@ -384,7 +399,7 @@ void MQTTClient::enqueueSendPingReq() {
         // send PINGREQ
         enqueueSendFront(OnDisconnect::DELETE_ME, buffer, [this]() {
             // sent PINGREQ, now enqueue receive PINGREQ
-            std::cout << "Sent ping\n";
+            std::cout << "\nSent ping" << std::endl;
             mPingIsScheduled = false;
             enqueueRecvPacketFront(OnDisconnect::DELETE_ME, [this](MessageType messageType, const std::vector<uint8_t>& buffer) {
                 // received PINGRESP
